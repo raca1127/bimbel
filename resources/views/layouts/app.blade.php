@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Belajar Online</title>
+  <!-- Font Awesome Free CDN -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     body{background:#f8fafc}
@@ -29,10 +31,9 @@
             @endif
             @if(auth()->user()->role === 'guru')
               <a class="btn btn-outline-secondary btn-sm" href="{{ route('teacher.materi.index') }}">Dashboard Guru</a>
-            @else
+              <a class="btn btn-outline-info btn-sm" href="{{ route('student.dashboard') }}">Dashboard Pelajar</a>
+            @elseif(auth()->user()->role === 'pelajar')
               <a class="btn btn-outline-secondary btn-sm" href="{{ route('student.index') }}">Dashboard</a>
-            @endif
-            @if(auth()->user()->role === 'pelajar')
               <a class="btn btn-sm btn-outline-info" href="{{ route('user.become_guru') }}">Minta Jadi Guru</a>
             @endif
             <form method="POST" action="{{ route('logout') }}">@csrf<button class="btn btn-sm btn-danger">Logout</button></form>
@@ -104,14 +105,14 @@
     </div>
   </div>
 
-  <!-- CKEditor CDN -->
-  <script src="https://cdn.ckeditor.com/4.25.1-lts/standard/ckeditor.js"></script>
+  <!-- CKEditor 5 CDN -->
+  <script src="https://cdn.ckeditor.com/ckeditor5/39.0.1/classic/ckeditor.js"></script>
   <script>
     document.addEventListener('DOMContentLoaded', function(){
-      // init CKEditor on any textarea[name=konten]
+      // init CKEditor 5 on any textarea[name=konten]
       document.querySelectorAll('textarea[name=konten]').forEach(function(tx, idx){
         if(!tx.id) tx.id = 'konten_'+idx;
-        try{ CKEDITOR.replace(tx.id); }catch(e){}
+        ClassicEditor.create(tx).catch(e=>{});
       });
 
       // global confirm-delete handler for forms with class 'confirm-delete'

@@ -21,73 +21,148 @@ class MateriController extends Controller
             return $next($request);
         });
     }
+public function index()
+{
+    $guru = Auth::user();
 
-    public function index()
-    {
-        $guru = Auth::user();
-        $materi = Materi::where('guru_id', $guru->id)->with('soal')->get();
-        return view('teacher.dashboard', compact('materi'));
-    }
+    // Ambil materi yang dibuat oleh guru ini saja, dengan soal
+    $materi = Materi::with('soal')
+        ->where('guru_id', $guru->id)
+        ->paginate(10);
+
+    // Ambil ID materi yang dibookmark guru
+    $bookmarkedIds = $guru->bookmarks()->pluck('materi_id')->toArray();
+
+    // Ambil data materi yang dibookmark
+    $bookmarkedMateri = Materi::whereIn('id', $bookmarkedIds)->get();
+
+    $total = Materi::count();
+    $readCount = $total;
+
+    // Ambil riwayat attempt yang terkait materi guru ini
+    $attempts = \App\Models\Attempt::whereHas('answers.soal', function($q) use ($guru) {
+        $q->whereHas('materi', fn($m) => $m->where('guru_id', $guru->id));
+    })->orderByDesc('created_at')->paginate(12);
+
+    $top = collect();  // bisa diisi leaderboard nanti
+
+    // Ambil soal guru sendiri
+    $soal = \App\Models\Soal::whereHas('materi', fn($q) => $q->where('guru_id', $guru->id))->get();
+
+    return view('teacher.dashboard', compact(
+        'materi', 
+        'bookmarkedIds', 
+        'bookmarkedMateri', 
+        'readCount', 
+        'total', 
+        'attempts', 
+        'top', 
+        'soal'
+    ));
+}
+
+
 
     public function store(Request $request)
     {
-        $user = Auth::user();
-        if ($user->role !== 'guru') {
-            return redirect()->back()->with('error', 'Hanya guru yang dapat membuat materi.');
+        if (Auth::user()->role !== 'guru') {
+            abort(403);
         }
-        // filter out any empty question slots submitted by the form to avoid validation errors
-        $rawQuestions = $request->input('questions', []);
-        $filtered = [];
-        foreach ($rawQuestions as $q) {
-            if (isset($q['pertanyaan']) && strlen(trim($q['pertanyaan'])) > 0) {
-                $filtered[] = $q;
-            }
-        }
-        $request->merge(['questions' => $filtered]);
 
-        // build rules: only require question fields if there is at least one non-empty question
-        $rules = [
+        $rawQuestions = $request->input('questions', []);
+        $cleanQuestions = [];
+
+        foreach ($rawQuestions as $q) {
+
+            $pertanyaan = trim($q['pertanyaan'] ?? '');
+            $type = $q['type'] ?? null;
+
+            // WAJIB ada pertanyaan & type
+            if ($pertanyaan === '' || ! in_array($type, ['mcq', 'essay'])) {
+                continue;
+            }
+
+            // Normalisasi soal
+            $question = [
+                'pertanyaan' => $pertanyaan,
+                'type' => $type,
+                'choices' => [],
+                'jawaban_benar' => $q['jawaban_benar'] ?? null,
+            ];
+
+            // MCQ: minimal 2 pilihan
+            if ($type === 'mcq') {
+                $choices = array_values(array_filter(
+                    $q['choices'] ?? [],
+                    fn ($c) => trim($c) !== ''
+                ));
+
+                if (count($choices) < 2) {
+                    continue;
+                }
+
+                $question['choices'] = $choices;
+            }
+
+            $cleanQuestions[] = $question;
+        }
+
+        // VALIDASI LOGIKA BISNIS
+        $mcqCount = collect($cleanQuestions)->where('type', 'mcq')->count();
+        $essayCount = collect($cleanQuestions)->where('type', 'essay')->count();
+
+        if ($mcqCount < 1 || $essayCount < 1) {
+            return back()
+                ->withInput()
+                ->withErrors('Minimal harus ada 1 soal pilihan ganda dan 1 soal essay.');
+        }
+
+        // VALIDASI FORM UTAMA
+        $data = $request->validate([
             'judul' => 'required|string|max:255',
             'konten' => 'required|string',
-            'questions' => 'array',
-        ];
-        if (count($filtered) > 0) {
-            $rules['questions.*.type'] = 'required|in:mcq,essay';
-            $rules['questions.*.pertanyaan'] = 'required|string';
-            $rules['questions.*.choices'] = 'array';
-            $rules['questions.*.jawaban_benar'] = 'nullable';
-        }
-
-        $data = $request->validate($rules);
-
-        $materi = Materi::create([
-            'guru_id' => Auth::id(),
-            'judul' => $data['judul'],
-            'konten' => $data['konten'],
         ]);
 
-        // create multiple soal if provided
-        $questions = $request->input('questions', []);
-        if (! empty($questions)) {
-            foreach ($questions as $q) {
-                $soalData = [
-                    'materi_id' => $materi->id,
-                    'pertanyaan' => $q['pertanyaan'] ?? '',
-                    'type' => $q['type'] ?? 'mcq',
-                ];
-                if (($q['type'] ?? '') === 'mcq') {
-                    $choices = $q['choices'] ?? [];
-                    $soalData['choices'] = array_values(array_filter($choices, fn($c)=>strlen(trim($c))>0));
-                    $soalData['jawaban_benar'] = $q['jawaban_benar'] ?? null;
-                } else {
-                    $soalData['jawaban_benar'] = $q['jawaban_benar'] ?? null;
-                }
-                Soal::create($soalData);
-            }
-        }
+        \DB::beginTransaction();
 
-        return redirect()->route('teacher.materi.index')->with('success', 'Materi dan Soal berhasil dibuat.');
+        try {
+            $materi = Materi::create([
+                'guru_id' => Auth::id(),
+                'judul' => $data['judul'],
+                'konten' => $data['konten'],
+            ]);
+
+            foreach ($cleanQuestions as $q) {
+                Soal::create([
+                    'materi_id' => $materi->id,
+                    'pertanyaan' => $q['pertanyaan'],
+                    'type' => $q['type'],
+                    'choices' => $q['choices'],
+                    'jawaban_benar' => $q['jawaban_benar'],
+                ]);
+            }
+
+            \DB::commit();
+
+            return redirect()
+                ->route('teacher.materi.index')
+                ->with('success', 'Materi dan soal berhasil dibuat.');
+
+        } catch (\Throwable $e) {
+            \DB::rollBack();
+
+            \Log::error('Materi store failed', [
+                'error' => $e->getMessage(),
+                'questions_raw' => $rawQuestions,
+                'questions_clean' => $cleanQuestions,
+            ]);
+
+            return back()
+                ->withInput()
+                ->withErrors('Terjadi kesalahan saat menyimpan materi.');
+        }
     }
+
 
     public function edit($id)
     {
@@ -97,84 +172,172 @@ class MateriController extends Controller
     }
 
     public function update(Request $request, $id)
-    {
-        $materi = Materi::findOrFail($id);
-        if ($materi->guru_id !== Auth::id()) abort(403);
-        // filter empty questions to avoid validation on blank slots
-        $rawQuestions = $request->input('questions', []);
-        $filtered = [];
-        foreach ($rawQuestions as $q) {
-            if (isset($q['pertanyaan']) && strlen(trim($q['pertanyaan'])) > 0) {
-                $filtered[] = $q;
-            }
-        }
-        $request->merge(['questions' => $filtered]);
+{
+    $materi = Materi::with('soal')->findOrFail($id);
+    if ($materi->guru_id !== Auth::id()) abort(403);
 
-        $rules = [
-            'judul' => 'required|string|max:255',
-            'konten' => 'required|string',
-            'questions' => 'array',
-            'questions.*.id' => 'nullable|integer',
+    $rawQuestions = $request->input('questions', []);
+    $cleanQuestions = [];
+
+    // Ambil soal lama
+    $existingQuestions = $materi->soal->keyBy('id');
+
+    foreach ($rawQuestions as $q) {
+        $id = $q['id'] ?? null;
+
+        // Jika input soal kosong, ambil soal lama
+        if ($id && isset($existingQuestions[$id])) {
+            $oldQ = $existingQuestions[$id];
+
+            // jika pertanyaan kosong, pakai data lama
+            $pertanyaan = trim($q['pertanyaan'] ?? '') ?: $oldQ->pertanyaan;
+            $type = $q['type'] ?? $oldQ->type;
+
+            $question = [
+                'id' => $id,
+                'pertanyaan' => $pertanyaan,
+                'type' => $type,
+                'choices' => [],
+                'jawaban_benar' => $q['jawaban_benar'] ?? $oldQ->jawaban_benar,
+            ];
+
+            if ($type === 'mcq') {
+                $choices = array_values(array_filter(
+                    $q['choices'] ?? $oldQ->choices ?? [],
+                    fn($c) => trim($c) !== ''
+                ));
+
+                // fallback ke pilihan lama jika kosong
+                if (empty($choices)) {
+                    $choices = $oldQ->choices ?? [];
+                }
+
+                // validasi jawaban benar
+                $jawaban_benar = $q['jawaban_benar'] ?? $oldQ->jawaban_benar;
+                if (!is_numeric($jawaban_benar) || $jawaban_benar < 0 || $jawaban_benar >= count($choices)) {
+                    $jawaban_benar = null;
+                }
+
+                $question['choices'] = $choices;
+                $question['jawaban_benar'] = $jawaban_benar;
+            }
+
+            $cleanQuestions[] = $question;
+            continue;
+        }
+
+        // Soal baru
+        $pertanyaan = trim($q['pertanyaan'] ?? '');
+        $type = $q['type'] ?? null;
+
+        if ($pertanyaan === '' || !in_array($type, ['mcq', 'essay'])) {
+            continue;
+        }
+
+        $question = [
+            'id' => null,
+            'pertanyaan' => $pertanyaan,
+            'type' => $type,
+            'choices' => [],
+            'jawaban_benar' => $q['jawaban_benar'] ?? null,
         ];
-        if (count($filtered) > 0) {
-            $rules['questions.*.type'] = 'required|in:mcq,essay';
-            $rules['questions.*.pertanyaan'] = 'required|string';
-            $rules['questions.*.choices'] = 'array';
-            $rules['questions.*.jawaban_benar'] = 'nullable';
+
+        if ($type === 'mcq') {
+            $choices = array_values(array_filter(
+                $q['choices'] ?? [],
+                fn($c) => trim($c) !== ''
+            ));
+
+            if (empty($choices)) continue;
+
+            $jawaban_benar = $q['jawaban_benar'];
+            if (!is_numeric($jawaban_benar) || $jawaban_benar < 0 || $jawaban_benar >= count($choices)) {
+                $jawaban_benar = null;
+            }
+
+            $question['choices'] = $choices;
+            $question['jawaban_benar'] = $jawaban_benar;
         }
 
-        $data = $request->validate($rules);
+        $cleanQuestions[] = $question;
+    }
 
-        $materi->update(['judul' => $data['judul'], 'konten' => $data['konten']]);
+    // Validasi bisnis
+    $mcqCount = collect($cleanQuestions)->where('type', 'mcq')->count();
+    $essayCount = collect($cleanQuestions)->where('type', 'essay')->count();
 
-        $questions = $request->input('questions', []);
-        $existingIds = $materi->soal()->pluck('id')->toArray();
+    if ($mcqCount < 1 || $essayCount < 1) {
+        return back()
+            ->withInput()
+            ->withErrors('Minimal harus ada 1 soal pilihan ganda dan 1 soal essay.');
+    }
+
+    // Validasi materi
+    $data = $request->validate([
+        'judul' => 'required|string|max:255',
+        'konten' => 'required|string',
+    ]);
+
+    \DB::beginTransaction();
+
+    try {
+        $materi->update([
+            'judul' => $data['judul'],
+            'konten' => $data['konten'],
+        ]);
+
+        $existingIds = $materi->soal->pluck('id')->toArray();
         $sentIds = [];
-        foreach ($questions as $q) {
-            if (! empty($q['id']) && in_array($q['id'], $existingIds)) {
-                $soal = Soal::find($q['id']);
-                // ensure ownership
-                if ($soal && $soal->materi && $soal->materi->guru_id == Auth::id()) {
-                    $update = [
-                        'pertanyaan' => $q['pertanyaan'] ?? $soal->pertanyaan,
-                        'type' => $q['type'] ?? $soal->type,
-                    ];
-                    if (($q['type'] ?? $soal->type) === 'mcq') {
-                        $update['choices'] = array_values(array_filter($q['choices'] ?? [], fn($c)=>strlen(trim($c))>0));
-                        $update['jawaban_benar'] = $q['jawaban_benar'] ?? $soal->jawaban_benar;
-                    } else {
-                        $update['jawaban_benar'] = $q['jawaban_benar'] ?? $soal->jawaban_benar;
-                    }
-                    $soal->update($update);
-                    $sentIds[] = $soal->id;
-                }
+
+        foreach ($cleanQuestions as $q) {
+            if ($q['id'] && in_array($q['id'], $existingIds)) {
+                Soal::where('id', $q['id'])->update([
+                    'pertanyaan' => $q['pertanyaan'],
+                    'type' => $q['type'],
+                    'choices' => $q['choices'],
+                    'jawaban_benar' => $q['jawaban_benar'],
+                ]);
+                $sentIds[] = $q['id'];
             } else {
-                // create new soal
-                $soalData = [
+                $new = Soal::create([
                     'materi_id' => $materi->id,
-                    'pertanyaan' => $q['pertanyaan'] ?? '',
-                    'type' => $q['type'] ?? 'mcq',
-                ];
-                if (($q['type'] ?? '') === 'mcq') {
-                    $choices = $q['choices'] ?? [];
-                    $soalData['choices'] = array_values(array_filter($choices, fn($c)=>strlen(trim($c))>0));
-                    $soalData['jawaban_benar'] = $q['jawaban_benar'] ?? null;
-                } else {
-                    $soalData['jawaban_benar'] = $q['jawaban_benar'] ?? null;
-                }
-                $created = Soal::create($soalData);
-                $sentIds[] = $created->id;
+                    'pertanyaan' => $q['pertanyaan'],
+                    'type' => $q['type'],
+                    'choices' => $q['choices'],
+                    'jawaban_benar' => $q['jawaban_benar'],
+                ]);
+                $sentIds[] = $new->id;
             }
         }
 
-        // delete removed soal (only those belonging to this materi)
+        // Hapus soal yang dihapus
         $toDelete = array_diff($existingIds, $sentIds);
-        if (! empty($toDelete)) {
+        if (!empty($toDelete)) {
             Soal::whereIn('id', $toDelete)->delete();
         }
 
-        return redirect()->route('teacher.materi.index')->with('success', 'Materi diperbarui.');
+        \DB::commit();
+
+        return redirect()
+            ->route('teacher.materi.index')
+            ->with('success', 'Materi berhasil diperbarui.');
+
+    } catch (\Throwable $e) {
+        \DB::rollBack();
+        \Log::error('Materi update failed', [
+            'error' => $e->getMessage(),
+            'materi_id' => $materi->id,
+            'questions_raw' => $rawQuestions,
+            'questions_clean' => $cleanQuestions,
+        ]);
+
+        return back()
+            ->withInput()
+            ->withErrors('Terjadi kesalahan saat memperbarui materi.');
     }
+}
+
+
 
     public function destroy($id)
     {
@@ -327,4 +490,14 @@ class MateriController extends Controller
 
         return redirect()->route('teacher.attempts')->with('success', 'Penilaian disimpan.');
     }
+
+    
+    public function show(Materi $materi)
+    {
+        $guru = Auth::user(); // optional jika ingin cek hak akses
+
+        return view('student.materi', compact('materi'));
+    }
 }
+
+

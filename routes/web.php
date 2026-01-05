@@ -12,9 +12,21 @@ Route::get('/', function () {
     return view('welcome');
 });
 
+// Export template CSV for materi import
+Route::get('/guru/materi/template', function() {
+    $path = resource_path('imports/materi_soal_template.csv');
+    return response()->download($path, 'materi_soal_template.csv', [
+        'Content-Type' => 'text/csv',
+    ]);
+})->name('teacher.materi.template');
+
 // Public materials (no auth)
 Route::get('/materi', [PublicController::class, 'materials'])->name('public.materi');
 Route::get('/materi/{id}', [PublicController::class, 'showMaterial'])->name('public.materi.show');
+
+Route::get('/student/materi/{materi}', [MateriController::class, 'show'])
+    ->name('student.materi.show');
+
 
 // Become guru request (auth required)
 Route::middleware('auth')->group(function(){
@@ -61,12 +73,16 @@ Route::middleware(['auth','role:admin'])->prefix('admin')->group(function () {
 // Rute untuk pelajar
 Route::middleware('auth')->group(function () {
     Route::get('/pelajar', [StudentController::class, 'index'])->name('student.index');
+    // Alias for dashboard switch (guru ke pelajar)
+    Route::get('/dashboard/pelajar', [StudentController::class, 'index'])->name('student.dashboard');
     Route::post('/pelajar/materi/{id}/read', [StudentController::class, 'readMateri'])->name('student.read');
     Route::get('/pelajar/soal', [StudentController::class, 'viewSoal'])->name('student.soal');
     // Quiz flow
     Route::post('/pelajar/quiz/start', [StudentController::class, 'startQuiz'])->name('student.quiz.start');
     // start final exam for a specific materi
     Route::post('/pelajar/materi/{id}/exam/start', [StudentController::class, 'startExam'])->name('student.exam.start');
+    // bookmark toggle (pelajar or guru can bookmark)
+    Route::post('/pelajar/materi/{id}/bookmark', [StudentController::class, 'toggleBookmark'])->name('student.bookmark.toggle');
     Route::get('/pelajar/quiz/{attempt}', [StudentController::class, 'showQuiz'])->name('student.quiz.show');
     Route::post('/pelajar/quiz/{attempt}/submit', [StudentController::class, 'submitQuiz'])->name('student.quiz.submit');
     Route::get('/pelajar/attempt/{attempt}/result', [StudentController::class, 'showResult'])->name('student.attempt.result');

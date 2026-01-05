@@ -37,6 +37,7 @@ class User extends Authenticatable
         return $this->hasMany(MateriPelajar::class, 'pelajar_id');
     }
 
+
     public function isBlocked(): bool
     {
         return (bool) $this->is_blocked;
@@ -45,5 +46,11 @@ class User extends Authenticatable
     public function getPointsAttribute($value)
     {
         return (int) ($value ?? 0);
+    }
+
+    // Relasi bookmark materi
+    public function bookmarks()
+    {
+        return $this->hasMany(\App\Models\Bookmark::class, 'user_id');
     }
 }

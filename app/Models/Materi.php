@@ -39,4 +39,10 @@ class Materi extends Model
     {
         return $this->hasMany(MateriPelajar::class);
     }
+
+    // Relasi ke bookmark
+    public function bookmarks(): HasMany
+    {
+        return $this->hasMany(\App\Models\Bookmark::class, 'materi_id');
+    }
 }

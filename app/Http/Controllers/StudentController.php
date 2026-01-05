@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Materi;
 use App\Models\MateriPelajar;
 use App\Models\Soal;
+use App\Models\Bookmark;
 use App\Models\Attempt;
 use App\Models\AttemptAnswer;
 use Illuminate\Http\Request;
@@ -26,16 +27,57 @@ class StudentController extends Controller
         });
     }
 
-    // Student dashboard
-    public function index()
-    {
-        $materi = Materi::with('soal')->paginate(8);
-        $pelajar = Auth::user();
-        $readCount = MateriPelajar::where('pelajar_id', $pelajar->id)->where('status', 'read')->count();
-        $total = Materi::count();
-        $canAccessSoal = $total > 0 && $readCount >= $total;
+  // Student dashboard
+public function index(Request $request)
+{
+    $pelajar = Auth::user();
 
-        return view('student.dashboard', compact('materi', 'canAccessSoal', 'readCount', 'total'));
+    // Query dasar Materi
+    $query = Materi::with('soal');
+
+    // Jika ada query pencarian
+    if ($request->has('q') && $request->q != '') {
+        $search = $request->q;
+        $query->where('judul', 'like', "%{$search}%")
+              ->orWhere('konten', 'like', "%{$search}%");
+    }
+
+    // Ambil materi dengan pagination
+    $materi = $query->paginate(8)->withQueryString(); // withQueryString biar q tetap di pagination
+
+    // Ambil ID materi yang sudah completed
+    $readIds = MateriPelajar::where('pelajar_id', $pelajar->id)
+        ->where('status', 'completed')
+        ->pluck('materi_id') // ambil ID materinya saja
+        ->toArray();
+
+    $readCount = count($readIds); // jumlah completed
+    $total = Materi::count();
+    $canAccessSoal = $total > 0 && $readCount >= $total;
+
+    // bookmarked materi ids for current user
+    $bookmarkedIds = $pelajar->bookmarks()->pluck('materi_id')->toArray();
+
+    return view('student.dashboard', compact(
+        'materi', 'canAccessSoal', 'readCount', 'total', 'bookmarkedIds', 'readIds'
+    ));
+}
+
+
+    // Toggle bookmark for a materi (create or remove)
+    public function toggleBookmark($id)
+    {
+        $user = Auth::user();
+        $materi = Materi::findOrFail($id);
+
+        $existing = Bookmark::where('user_id', $user->id)->where('materi_id', $materi->id)->first();
+        if ($existing) {
+            $existing->delete();
+            return redirect()->back()->with('success', 'Bookmark dihapus.');
+        }
+
+        Bookmark::create(['user_id' => $user->id, 'materi_id' => $materi->id]);
+        return redirect()->back()->with('success', 'Materi dibookmark.');
     }
 
     // mark materi read
@@ -44,12 +86,13 @@ class StudentController extends Controller
         $pelajar = Auth::user();
         $materi = Materi::findOrFail($id);
         $record = MateriPelajar::where('pelajar_id', $pelajar->id)->where('materi_id', $materi->id)->first();
+        
         if (! $record) {
-            MateriPelajar::create(['pelajar_id' => $pelajar->id, 'materi_id' => $materi->id, 'status' => 'read']);
+            MateriPelajar::create(['pelajar_id' => $pelajar->id, 'materi_id' => $materi->id, 'status' => 'completed']);
             // increment reads for first-time read
             $materi->increment('reads');
-        } elseif ($record->status !== 'read') {
-            $record->update(['status' => 'read']);
+        } elseif ($record->status !== 'completed') {
+            $record->update(['status' => 'completed']);
             $materi->increment('reads');
         } else {
             // already read — increment only reads
@@ -261,3 +304,5 @@ class StudentController extends Controller
         return view('student.soal', compact('soal'));
     }
 }
+
+

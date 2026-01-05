@@ -36,7 +36,7 @@ class UserSeeder extends Seeder
         User::firstOrCreate(['email' => 'pelajar_seed@example.com'], ['name' => 'Seed Pelajar', 'password' => Hash::make('password'), 'role' => 'pelajar']);
 
         // Admin
-        User::firstOrCreate(['email' => 'admin@example.com'], ['name' => 'Admin', 'password' => Hash::make('adminpass'), 'role' => 'admin', 'guru_status' => 'none', 'is_blocked' => false]);
+        User::firstOrCreate(['email' => 'admin1@example.com'], ['name' => 'Admin', 'password' => Hash::make('password'), 'role' => 'admin', 'guru_status' => 'none', 'is_blocked' => false]);
         User::firstOrCreate(['email' => 'admin_seed@example.com'], ['name' => 'Seed Admin', 'password' => Hash::make('adminpass'), 'role' => 'admin']);
     }
 }
