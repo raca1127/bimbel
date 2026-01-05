@@ -53,6 +53,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/guru/attempts', [MateriController::class, 'attempts'])->name('teacher.attempts');
     Route::get('/guru/attempt/{id}/grade', [MateriController::class, 'gradeAttempt'])->name('teacher.attempt.grade');
     Route::post('/guru/attempt/{id}/grade', [MateriController::class, 'saveGrading'])->name('teacher.attempt.grade.save');
+    Route::get('/guru/attempts', [MateriController::class, 'attempts'])->name('teacher.attempts');
+
 });
 
 // Admin routes

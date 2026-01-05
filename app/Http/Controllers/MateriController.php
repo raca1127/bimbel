@@ -349,14 +349,24 @@ public function index()
     }
 
     // List attempts related to this guru's materi
-    public function attempts()
-    {
-        $guru = Auth::user();
-        $attempts = \App\Models\Attempt::whereHas('answers.soal', function($q) use ($guru) {
-            $q->whereHas('materi', fn($m) => $m->where('guru_id', $guru->id));
-        })->with('answers.soal','pelajar')->paginate(12);
-        return view('teacher.attempts', compact('attempts'));
+public function attempts(Request $request)
+{
+    $guru = Auth::user();
+    $materiId = $request->query('materi_id');
+
+    $query = \App\Models\Attempt::whereHas('answers.soal', function($q) use ($guru) {
+        $q->whereHas('materi', fn($m) => $m->where('guru_id', $guru->id));
+    })->with('answers.soal','pelajar');
+
+    if ($materiId) {
+        $query->whereHas('answers.soal', fn($q) => $q->where('materi_id', $materiId));
     }
+
+    $attempts = $query->orderByDesc('created_at')->paginate(12);
+
+    return view('teacher.attempts', compact('attempts'));
+}
+
 
     // Show CSV import form
     public function importForm()

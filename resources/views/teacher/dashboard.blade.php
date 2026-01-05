@@ -46,31 +46,41 @@
 <div class="tab-content" id="guruTabContent">
     {{-- Materi Guru --}}
     <div class="tab-pane fade show active" id="materi" role="tabpanel">
-        <div class="row g-3 mt-2">
-            @forelse($materi as $m)
-            <div class="col-md-6">
-                <div class="card card-modern p-3">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <h5>{{ $m->judul }}</h5>
-                        <div class="d-flex gap-1">
-                            <a href="{{ route('teacher.materi.edit', $m->id) }}" class="btn btn-sm btn-outline-primary">Edit</a>
-                            <form action="{{ route('teacher.materi.destroy', $m->id) }}" method="POST" class="d-inline confirm-delete" data-message="Hapus materi '{{ $m->judul }}'?">
-                                @csrf
-                                @method('DELETE')
-                                <button class="btn btn-sm btn-outline-danger">Hapus</button>
-                            </form>
-                        </div>
-                    </div>
-                    <p class="text-muted">{{ \Illuminate\Support\Str::limit(strip_tags($m->konten), 140) }}</p>
-                    <div class="small text-secondary">Soal: {{ $m->soal && $m->soal->count() > 0 ? 'Ada' : 'Belum' }}</div>
+<div class="row g-3 mt-2">
+    @forelse($materi as $m)
+    <div class="col-md-6">
+        <div class="card card-modern p-3">
+            <div class="d-flex justify-content-between align-items-start">
+                <h5>{{ $m->judul }}</h5>
+                <div class="d-flex gap-1 flex-wrap">
+                    <a href="{{ route('teacher.materi.edit', $m->id) }}" class="btn btn-sm btn-outline-primary">Edit</a>
+
+                    <form action="{{ route('teacher.materi.destroy', $m->id) }}" method="POST" class="d-inline confirm-delete" data-message="Hapus materi '{{ $m->judul }}'?">
+                        @csrf
+                        @method('DELETE')
+                        <button class="btn btn-sm btn-outline-danger">Hapus</button>
+                    </form>
+
+                    {{-- Tombol Lihat Attempt / Nilai --}}
+<a href="{{ route('teacher.attempts') }}?materi_id={{ $m->id }}" class="btn btn-sm btn-success">
+    Nilai Jawaban
+</a>
+
                 </div>
             </div>
-            @empty
-            <div class="col-12">
-                <div class="card p-3 card-modern">Belum ada materi. Tambah menggunakan tombol di kanan atas.</div>
+            <p class="text-muted">{{ \Illuminate\Support\Str::limit(strip_tags($m->konten), 140) }}</p>
+            <div class="small text-secondary">
+                Soal: {{ $m->soal && $m->soal->count() > 0 ? 'Ada' : 'Belum' }}
             </div>
-            @endforelse
         </div>
+    </div>
+    @empty
+    <div class="col-12">
+        <div class="card p-3 card-modern">Belum ada materi. Tambah menggunakan tombol di kanan atas.</div>
+    </div>
+    @endforelse
+</div>
+
     </div>
 
 @include('partials.modal_materi')
