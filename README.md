@@ -188,12 +188,3 @@ If you want, I can:
 
 ---
 Documentation created by the code assistant. For any section you want expanded (detailed route list, model properties with types, sequence diagrams), tell me which one and I'll add it to `README.md` or a separate doc file.
-
-
-pending :
-perbaikin agar materi yang ada itu tampilannya sama dengan dashboard user sekarang, dan kamu juga harus update agar membedakan dashboard user dengan mteri yaitu, dengan hanya menampilkan materi yang sudah sedang / sudah di selesaikan oleh pelajar tersebut, dan ini juga berlaku untuk guru karena guru bisa semua tanpa terkecuali apapun yang bisa di lakukan user, oh yah tambahkan bookmark untuk buku yang di tandai, dan ini juga masuk dalam dashboard pelajarnhya, dan juga gurunya, jadi guru punya dua dashboard dan update juga agar hanya make CKEditor 5
-
-
-Tugas 1 dan 2 (penyamaan tampilan materi & filter materi dashboard) sudah selesai: tampilan materi sudah konsisten, dan dashboard pelajar/guru sudah menampilkan materi sesuai status (read/completed).
-Tugas 3 (bookmark materi) sudah mulai: sudah dibuat migrasi dan model Bookmark, serta relasi di User dan Materi.
-Langkah selanjutnya: implementasi tombol bookmark di dashboard pelajar/guru, serta menampilkan materi yang dibookmark di dashboard.
