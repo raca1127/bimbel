@@ -1,0 +1,2 @@
+judul,konten,is_public,soal_json
+"Contoh Materi 1","Ini adalah konten materi (HTML allowed).",1,"[{""type"": ""mcq"", ""pertanyaan"": ""Apa warna langit?"", ""choices"": [""Biru"",""Merah"",""Hijau""], ""jawaban_benar"": ""Biru""}, {""type"": ""essay"", ""pertanyaan"": ""Jelaskan siklus air."", ""jawaban_benar"": ""Air menguap...""}]"
