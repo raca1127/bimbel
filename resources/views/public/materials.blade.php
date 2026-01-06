@@ -1,29 +1,57 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="d-flex justify-content-between align-items-center mb-3">
-  <h3>Materi Umum</h3>
-  <form class="d-flex" method="GET">
-    <input name="q" value="{{ request('q') }}" class="form-control form-control-sm me-2" placeholder="Cari...">
-    <button class="btn btn-sm btn-outline-primary">Cari</button>
-  </form>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h3 class="mb-0">Materi Umum</h3>
+    <form class="d-flex" method="GET" role="search">
+        <input 
+            type="text" 
+            name="q" 
+            value="{{ request('q') }}" 
+            class="form-control form-control-sm me-2" 
+            placeholder="Cari materi..."
+        >
+        <button type="submit" class="btn btn-sm btn-outline-primary">Cari</button>
+    </form>
 </div>
 
-<div class="row g-3">
-  @foreach($materi as $m)
-    <div class="col-md-6">
-      <div class="card card-modern p-3">
-        <h5>{{ $m->judul }}</h5>
-        <p class="text-muted">{{ \Illuminate\Support\Str::limit(strip_tags($m->konten), 140) }}</p>
-        <div class="d-flex align-items-center gap-2">
-          <a href="{{ route('public.materi.show', $m->id) }}" class="btn btn-sm btn-primary">Baca</a>
-          <div class="ms-auto text-muted small">👁️ {{ $m->completions ?? 0 }}</div>
-        </div>
-      </div>
+@if($materi->isEmpty())
+    <div class="alert alert-secondary text-center">
+        Belum ada materi yang tersedia.
     </div>
-  @endforeach
-</div>
+@else
+    <div class="row g-3">
+        @foreach($materi as $m)
+        <div class="col-md-6 col-lg-4">
+            <div class="card h-100 shadow-sm border-0">
+                <div class="card-body d-flex flex-column">
+                    {{-- Judul --}}
+                    <h5 class="card-title">{{ $m->judul }}</h5>
 
-<div class="mt-3">{{ $materi->links() }}</div>
+                    {{-- Konten --}}
+                    <p class="card-text text-muted flex-grow-1">
+                        {{ \Illuminate\Support\Str::limit(strip_tags($m->konten), 140, '...') }}
+                    </p>
+
+                    {{-- Aksi & Statistik --}}
+                    <div class="d-flex align-items-center mt-3">
+                        <a href="{{ route('public.materi.show', $m->id) }}" class="btn btn-sm btn-primary">
+                            Baca
+                        </a>
+                        <div class="ms-auto text-muted small">
+                            <i class="fas fa-eye"></i> {{ $m->completions ?? 0 }} dibaca
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        @endforeach
+    </div>
+
+    {{-- Pagination --}}
+    <div class="mt-4">
+        {{ $materi->links() }}
+    </div>
+@endif
 
 @endsection

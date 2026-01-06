@@ -14,4 +14,14 @@
     @csrf
     <button class="btn btn-success">Tandai Sudah Dibaca</button>
 </form>
+
+{{-- CSS tambahan agar gambar tidak meluber --}}
+<style>
+    .card img {
+        max-width: 100%;
+        height: auto;
+        display: block;
+        margin: 0.5rem 0;
+    }
+</style>
 @endsection

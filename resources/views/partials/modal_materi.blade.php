@@ -54,8 +54,8 @@
     <div class="mb-2">
       <label class="form-label">Tipe Soal</label>
       <select name="questions[__INDEX__][type]" class="form-select q-type" required>
-        <option value="mcq">Pilihan Berganda</option>
-        <option value="essay">Essay</option>
+        <option value="mcq">Pilihan Ganda</option>
+        <option value="essay">Essai</option>
       </select>
     </div>
 
@@ -69,29 +69,27 @@
     </div>
 
     {{-- MCQ --}}
-    <div class="mcq-area">
+    <div class="mcq-area mb-2">
       <label class="form-label">Pilihan Jawaban</label>
       @for ($i = 0; $i < 5; $i++)
         <input
           name="questions[__INDEX__][choices][]"
-          class="form-control mb-1"
+          class="form-control mb-1 choice-input"
           placeholder="Pilihan {{ $i + 1 }}">
       @endfor
 
       <div class="mt-2">
-        <label class="form-label">Jawaban Benar (index 0–4)</label>
-        <input
-          name="questions[__INDEX__][jawaban_benar]"
-          class="form-control">
+        <label class="form-label">Jawaban Benar</label>
+        <select name="questions[__INDEX__][jawaban_benar_mcq]" class="form-select answer-select">
+          <option value="">-- Pilih jawaban benar --</option>
+        </select>
       </div>
     </div>
 
     {{-- ESSAY --}}
-    <div class="essay-area" style="display:none">
+    <div class="essay-area mb-2" style="display:none">
       <label class="form-label">Kunci Jawaban Essay (opsional)</label>
-      <input
-        name="questions[__INDEX__][jawaban_benar]"
-        class="form-control">
+      <input name="questions[__INDEX__][jawaban_benar_essay]" class="form-control">
     </div>
 
     <div class="text-end mt-2">
@@ -105,41 +103,62 @@
 
 @push('scripts')
 <script>
-  let questionIndex = 0;
-  const container = document.getElementById('questions_container');
-  const template = document.getElementById('question_template');
+let questionIndex = 0;
+const container = document.getElementById('questions_container');
+const template = document.getElementById('question_template');
 
-  function addQuestion() {
-    let html = template.innerHTML.replaceAll('__INDEX__', questionIndex);
-    const div = document.createElement('div');
-    div.innerHTML = html;
+function addQuestion() {
+  let html = template.innerHTML.replaceAll('__INDEX__', questionIndex);
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  container.appendChild(div.firstElementChild);
+  bindEvents();
+  questionIndex++;
+}
 
-    container.appendChild(div.firstElementChild);
-    questionIndex++;
-    bindEvents();
-  }
+function bindEvents() {
+  // Toggle MCQ / Essay
+  container.querySelectorAll('.q-type').forEach(sel => {
+    sel.onchange = function () {
+      const block = this.closest('.question-block');
+      block.querySelector('.mcq-area').style.display = this.value==='mcq' ? 'block' : 'none';
+      block.querySelector('.essay-area').style.display = this.value==='essay' ? 'block' : 'none';
+    };
+  });
 
-  function bindEvents() {
-    document.querySelectorAll('.q-type').forEach(sel => {
-      sel.onchange = function () {
-        const block = this.closest('.question-block');
-        block.querySelector('.mcq-area').style.display =
-          this.value === 'mcq' ? 'block' : 'none';
-        block.querySelector('.essay-area').style.display =
-          this.value === 'essay' ? 'block' : 'none';
-      };
+  // Hapus soal
+  container.querySelectorAll('.btn-remove-question').forEach(btn => {
+    btn.onclick = function () {
+      this.closest('.question-block').remove();
+    };
+  });
+
+  // Update dropdown jawaban benar MCQ otomatis saat input choices
+  container.querySelectorAll('.question-block').forEach(block=>{
+    const choices = block.querySelectorAll('.choice-input');
+    choices.forEach(inp=>{
+      inp.addEventListener('input', ()=>{
+        const select = block.querySelector('.answer-select');
+        const currentVal = select.value;
+        select.innerHTML = '<option value="">-- Pilih jawaban benar --</option>';
+        choices.forEach((c,i)=>{
+          if(c.value.trim()!==''){
+            const opt = document.createElement('option');
+            opt.value = i;
+            opt.text = c.value;
+            select.appendChild(opt);
+          }
+        });
+        select.value = currentVal;
+      });
     });
+  });
+}
 
-    document.querySelectorAll('.btn-remove-question').forEach(btn => {
-      btn.onclick = function () {
-        this.closest('.question-block').remove();
-      };
-    });
-  }
+// Event tombol tambah soal
+document.getElementById('btnAddQuestion').onclick = addQuestion;
 
-  document.getElementById('btnAddQuestion').onclick = addQuestion;
-
-  // otomatis 1 soal pertama
-  addQuestion();
+// Tambah 1 soal default
+addQuestion();
 </script>
 @endpush

@@ -26,4 +26,12 @@ class Soal extends Model
     {
         return $this->belongsTo(Materi::class);
     }
+
+    // App\Models\Soal.php
+    public function answers()
+    {
+        return $this->hasMany(Answer::class, 'soal_id');
+    }
+
+    
 }

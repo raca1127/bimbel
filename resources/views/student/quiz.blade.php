@@ -10,19 +10,35 @@
 
 <form method="POST" action="{{ route('student.quiz.submit', $attempt->id) }}">
   @csrf
+
   @foreach($attempt->answers as $idx => $ans)
-    @php $q = $ans->soal; @endphp
+    @php
+        $q = $ans->soal;
+        // Pastikan choices selalu array untuk MCQ
+        $choices = is_array($q->choices) ? $q->choices : (json_decode($q->choices, true) ?? []);
+    @endphp
+
     <div class="card card-modern mb-3 p-3">
-      <h5>Q{{ $idx+1 }}. {{ $q->pertanyaan }}</h5>
+      <h5>Q{{ $idx + 1 }}. {{ $q->pertanyaan }}</h5>
+
       @if($q->type === 'mcq')
-        @foreach($q->choices as $choiceIndex => $choice)
+        @foreach($choices as $choiceIndex => $choice)
           <div class="form-check">
-            <input class="form-check-input" type="radio" name="answers[{{ $q->id }}]" id="q{{ $q->id }}_{{ $choiceIndex }}" value="{{ $choiceIndex }}">
-            <label class="form-check-label" for="q{{ $q->id }}_{{ $choiceIndex }}">{{ $choice }}</label>
+            <input class="form-check-input" 
+                   type="radio" 
+                   name="answers[{{ $q->id }}]" 
+                   id="q{{ $q->id }}_{{ $choiceIndex }}" 
+                   value="{{ $choiceIndex }}"
+                   {{ old("answers.$q->id") == $choiceIndex ? 'checked' : '' }}>
+            <label class="form-check-label" for="q{{ $q->id }}_{{ $choiceIndex }}">
+              {{ $choice }}
+            </label>
           </div>
         @endforeach
       @else
-        <textarea name="answers[{{ $q->id }}]" class="form-control" rows="4"></textarea>
+        <textarea name="answers[{{ $q->id }}]" 
+                  class="form-control" 
+                  rows="4">{{ old("answers.$q->id") ?? '' }}</textarea>
       @endif
     </div>
   @endforeach
@@ -35,26 +51,29 @@
 
 @push('scripts')
 <script>
-  // simple countdown display using remaining seconds from server
+  // Countdown timer
   let remaining = {{ $remaining }};
-  function formatTime(s){
-    let h = Math.floor(s/3600).toString().padStart(2,'0');
-    let m = Math.floor((s%3600)/60).toString().padStart(2,'0');
-    let sec = Math.floor(s%60).toString().padStart(2,'0');
-    return h+':'+m+':'+sec;
-  }
   const timerEl = document.getElementById('timer');
-  timerEl.innerText = 'Waktu: ' + formatTime(remaining);
-  const interval = setInterval(()=>{
-    remaining--;
-    if(remaining<=0){
+
+  function formatTime(s){
+    const h = Math.floor(s/3600).toString().padStart(2,'0');
+    const m = Math.floor((s%3600)/60).toString().padStart(2,'0');
+    const sec = Math.floor(s%60).toString().padStart(2,'0');
+    return `${h}:${m}:${sec}`;
+  }
+
+  function updateTimer() {
+    timerEl.innerText = 'Waktu: ' + formatTime(remaining);
+    if(remaining <= 0){
       clearInterval(interval);
       alert('Waktu habis. Form akan dikirim otomatis.');
-      // submit form automatically
       document.querySelector('form').submit();
     }
-    timerEl.innerText = 'Waktu: ' + formatTime(remaining);
-  },1000);
+    remaining--;
+  }
+
+  timerEl.innerText = 'Waktu: ' + formatTime(remaining);
+  const interval = setInterval(updateTimer, 1000);
 </script>
 @endpush
 

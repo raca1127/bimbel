@@ -18,261 +18,264 @@ class StudentController extends Controller
     {
         $this->middleware(function ($request, $next) {
             $user = Auth::user();
-            $role = $user->role ?? '';
-            // allow pelajar or guru (guru may access student views)
-            if (! $user || ! in_array($role, ['pelajar','guru'])) {
+            if (! $user || ! in_array($user->role, ['pelajar', 'guru'])) {
                 abort(403);
             }
             return $next($request);
         });
     }
 
-  // Student dashboard
+    /* =====================================================
+     * DASHBOARD
+     * ===================================================== */
 public function index(Request $request)
 {
     $pelajar = Auth::user();
 
-    // Query dasar Materi
-    $query = Materi::with('soal');
+    // Query Materi dengan filter pencarian
+    $query = Materi::query();
 
-    // Jika ada query pencarian
-    if ($request->has('q') && $request->q != '') {
-        $search = $request->q;
-        $query->where('judul', 'like', "%{$search}%")
-              ->orWhere('konten', 'like', "%{$search}%");
+    if ($request->filled('q')) {
+        $query->where(function ($q) use ($request) {
+            $q->where('judul', 'like', "%{$request->q}%")
+              ->orWhere('konten', 'like', "%{$request->q}%");
+        });
     }
 
-    // Ambil materi dengan pagination
-    $materi = $query->paginate(8)->withQueryString(); // withQueryString biar q tetap di pagination
+    // Ambil materi paginasi
+    $materi = $query->paginate(8)->withQueryString();
 
-    // Ambil ID materi yang sudah completed
+    // Materi yang sudah dibaca / completed
     $readIds = MateriPelajar::where('pelajar_id', $pelajar->id)
         ->where('status', 'completed')
-        ->pluck('materi_id') // ambil ID materinya saja
+        ->pluck('materi_id')
         ->toArray();
 
-    $readCount = count($readIds); // jumlah completed
-    $total = Materi::count();
-    $canAccessSoal = $total > 0 && $readCount >= $total;
+    $readCount = count($readIds);
 
-    // bookmarked materi ids for current user
+    // Total materi
+    $totalMateri = Materi::count();
+
+    // Total soal di semua materi
+    $totalSoal = Soal::count();
+
+    // Materi yang bisa diakses soal
+    $canAccessSoal = $readCount >= $totalMateri && $totalMateri > 0;
+
+    // Materi yang di-bookmark
     $bookmarkedIds = $pelajar->bookmarks()->pluck('materi_id')->toArray();
 
     return view('student.dashboard', compact(
-        'materi', 'canAccessSoal', 'readCount', 'total', 'bookmarkedIds', 'readIds'
+        'materi',
+        'readIds',
+        'bookmarkedIds',
+        'canAccessSoal',
+        'totalMateri',
+        'totalSoal',  // <-- total soal dari semua materi
+        'readCount'
     ));
 }
 
 
-    // Toggle bookmark for a materi (create or remove)
+
+    /* =====================================================
+     * BOOKMARK
+     * ===================================================== */
     public function toggleBookmark($id)
     {
         $user = Auth::user();
-        $materi = Materi::findOrFail($id);
 
-        $existing = Bookmark::where('user_id', $user->id)->where('materi_id', $materi->id)->first();
-        if ($existing) {
-            $existing->delete();
-            return redirect()->back()->with('success', 'Bookmark dihapus.');
+        $bookmark = Bookmark::where('user_id', $user->id)
+            ->where('materi_id', $id)
+            ->first();
+
+        if ($bookmark) {
+            $bookmark->delete();
+            return back()->with('success', 'Bookmark dihapus.');
         }
 
-        Bookmark::create(['user_id' => $user->id, 'materi_id' => $materi->id]);
-        return redirect()->back()->with('success', 'Materi dibookmark.');
-    }
-
-    // mark materi read
-    public function readMateri($id)
-    {
-        $pelajar = Auth::user();
-        $materi = Materi::findOrFail($id);
-        $record = MateriPelajar::where('pelajar_id', $pelajar->id)->where('materi_id', $materi->id)->first();
-        
-        if (! $record) {
-            MateriPelajar::create(['pelajar_id' => $pelajar->id, 'materi_id' => $materi->id, 'status' => 'completed']);
-            // increment reads for first-time read
-            $materi->increment('reads');
-        } elseif ($record->status !== 'completed') {
-            $record->update(['status' => 'completed']);
-            $materi->increment('reads');
-        } else {
-            // already read — increment only reads
-            $materi->increment('reads');
-        }
-
-        return redirect()->route('student.index')->with('success', 'Materi ditandai sudah dibaca.');
-    }
-
-    // Start a new quiz attempt: create Attempt and select questions
-    public function startQuiz(Request $request)
-    {
-        $pelajar = Auth::user();
-        // legacy global quiz start — keep for compatibility
-        $attempt = Attempt::create([
-            'pelajar_id' => $pelajar->id,
-            'started_at' => Carbon::now(),
+        Bookmark::create([
+            'user_id' => $user->id,
+            'materi_id' => $id
         ]);
 
-        // Select up to 5 MCQ and 5 essay randomly across all soal
-        $mcq = Soal::where('type', 'mcq')->inRandomOrder()->limit(5)->get();
-        $essay = Soal::where('type', 'essay')->inRandomOrder()->limit(5)->get();
-        $questions = $mcq->merge($essay);
-
-        foreach ($questions as $q) {
-            AttemptAnswer::create([
-                'attempt_id' => $attempt->id,
-                'soal_id' => $q->id,
-                'answer' => null,
-                'is_correct' => false,
-            ]);
-        }
-
-        return redirect()->route('student.quiz.show', $attempt->id);
+        return back()->with('success', 'Materi dibookmark.');
     }
 
-    // Start final exam for a specific materi
+/* =====================================================
+ * READ MATERI
+ * ===================================================== */
+public function readMateri($id)
+{
+    $pelajar = Auth::user();
+    $materi = Materi::findOrFail($id);
+
+    // Ambil atau buat record MateriPelajar
+    $mp = MateriPelajar::firstOrNew(
+        [
+            'pelajar_id' => $pelajar->id,
+            'materi_id'  => $materi->id,
+        ]
+    );
+
+    // Cek apakah baru dibuat atau belum completed
+    if (!$mp->exists || $mp->status !== 'completed') {
+        $mp->status = 'completed';
+        $mp->save();
+
+        // Increment hanya jika status baru saja menjadi completed
+        $materi->increment('completions');
+    }
+
+    return redirect()->route('student.index')
+        ->with('success', 'Materi berhasil ditandai sebagai sudah dibaca.');
+}
+
+
+    /* =====================================================
+     * START EXAM (PER MATERI)
+     * ===================================================== */
     public function startExam($materiId)
     {
         $pelajar = Auth::user();
         $materi = Materi::findOrFail($materiId);
 
-        // allow both pelajar and guru to take the final exam
-        $record = MateriPelajar::where('pelajar_id', $pelajar->id)->where('materi_id', $materi->id)->first();
         if ($pelajar->role === 'pelajar') {
-            if (! $record || $record->status !== 'read') {
-                return redirect()->route('student.index')->with('error', 'Anda harus membaca materi sebelum mengikuti ujian akhir.');
+            $allowed = MateriPelajar::where([
+                'pelajar_id' => $pelajar->id,
+                'materi_id'  => $materi->id,
+                'status'     => 'completed'
+            ])->exists();
+
+            if (! $allowed) {
+                return redirect()->route('student.index')
+                    ->with('error', 'Anda harus membaca materi terlebih dahulu.');
             }
         }
 
         $attempt = Attempt::create([
             'pelajar_id' => $pelajar->id,
-            'materi_id' => $materi->id,
+            'materi_id'  => $materi->id,
             'started_at' => Carbon::now(),
+            'score'      => null
         ]);
 
-        // select soal for this materi (limit to 10 total)
-        $questions = Soal::where('materi_id', $materi->id)->inRandomOrder()->limit(10)->get();
+        $questions = Soal::where('materi_id', $materi->id)
+            ->inRandomOrder()
+            ->limit(10)
+            ->get();
+
         foreach ($questions as $q) {
             AttemptAnswer::create([
                 'attempt_id' => $attempt->id,
-                'soal_id' => $q->id,
-                'answer' => null,
-                'is_correct' => false,
+                'soal_id'    => $q->id,
+                'answer'     => null,
+                'is_correct' => false // default false, bukan null
             ]);
         }
 
         return redirect()->route('student.quiz.show', $attempt->id);
     }
 
-    // Show quiz page with timer (50 minutes)
+    /* =====================================================
+     * SHOW QUIZ
+     * ===================================================== */
     public function showQuiz($attemptId)
     {
         $attempt = Attempt::with('answers.soal')->findOrFail($attemptId);
-        $pelajar = Auth::user();
-        if ($attempt->pelajar_id !== $pelajar->id) abort(403);
 
-        $started = Carbon::parse($attempt->started_at);
-        $now = Carbon::now();
-        $elapsed = $now->diffInSeconds($started);
-        $limitSeconds = 50 * 60; // 50 minutes
+        abort_if($attempt->pelajar_id !== Auth::id(), 403);
+
+        $limitSeconds = 50 * 60;
+        $elapsed = Carbon::now()->diffInSeconds($attempt->started_at);
         $remaining = max(0, $limitSeconds - $elapsed);
 
         return view('student.quiz', compact('attempt', 'remaining'));
     }
 
-    // Submit quiz answers and compute score
+    /* =====================================================
+    * SUBMIT QUIZ
+    * ===================================================== */
     public function submitQuiz(Request $request, $attemptId)
     {
-        $user = Auth::user();
-        if ($user->is_blocked) {
-            return redirect()->route('student.index')->with('error', 'Akun Anda diblokir.');
-        }
         $attempt = Attempt::with('answers.soal')->findOrFail($attemptId);
-        $pelajar = Auth::user();
-        if ($attempt->pelajar_id !== $pelajar->id) abort(403);
 
-        $started = Carbon::parse($attempt->started_at);
-        $now = Carbon::now();
-        $duration = $now->diffInSeconds($started);
-        $limitSeconds = 50 * 60;
-        if ($duration > $limitSeconds) {
-            // timeout — still accept but mark ended
-        }
+        abort_if($attempt->pelajar_id !== Auth::id(), 403);
 
-        $answers = $request->input('answers', []);
-        $correct = 0;
-        $total = $attempt->answers->count();
+        $answersInput = $request->input('answers', []);
 
-        foreach ($attempt->answers as $ans) {
-            $soal = $ans->soal;
-            $given = $answers[$soal->id] ?? null;
-            $isCorrect = false;
+        foreach ($attempt->answers as $answer) {
+            $soal  = $answer->soal;
+            $given = $answersInput[$soal->id] ?? null;
+
             if ($soal->type === 'mcq') {
-                // compare given value with jawaban_benar
-                if ($given !== null && strval($given) === strval($soal->jawaban_benar)) {
-                    $isCorrect = true;
-                }
+                $answer->update([
+                    'answer'     => $given,
+                    'is_correct' => $this->checkMcq($soal, $given) ?? false
+                ]);
             } else {
-                // essay: simple text match (case-insensitive trim)
-                if ($given !== null && strtolower(trim($given)) === strtolower(trim($soal->jawaban_benar))) {
-                    $isCorrect = true;
-                }
+                // Essay, set default false sementara
+                $answer->update([
+                    'answer'     => $given,
+                    'is_correct' => false
+                ]);
             }
-
-            $ans->update(['answer' => $given, 'is_correct' => $isCorrect]);
-            if ($isCorrect) $correct++;
         }
 
-        $score = $total ? intval(round(($correct / $total) * 100)) : 0;
         $attempt->update([
-            'score' => $score,
-            'finished_at' => $now,
-            'duration_seconds' => $duration,
+            'finished_at'      => now(),
+            'duration_seconds' => now()->diffInSeconds($attempt->started_at),
+            'score'            => null // default 0
         ]);
 
-        // Award points for correct answers (avoid double-award)
-        $pointsPerCorrect = 10;
-        if (empty($attempt->points_awarded) || $attempt->points_awarded == 0) {
-            $points = $correct * $pointsPerCorrect;
-            if ($points > 0) {
-                $attempt->pelajar->increment('points', $points);
-                $attempt->points_awarded = $points;
-                $attempt->save();
-            }
-        }
-
-        // If this attempt is for a materi (final exam) and score >= 70, mark as completed
-        if ($attempt->materi_id) {
-            if ($score >= 70) {
-                $mp = MateriPelajar::firstOrCreate([
-                    'pelajar_id' => $pelajar->id,
-                    'materi_id' => $attempt->materi_id,
-                ], ['status' => 'read']);
-
-                if ($mp->status !== 'completed') {
-                    $mp->status = 'completed';
-                    $mp->save();
-                    // increment completions count on materi
-                    $materi = Materi::find($attempt->materi_id);
-                    if ($materi) $materi->increment('completions');
-                }
-            }
-        }
-
-        return redirect()->route('student.attempt.result', $attempt->id)->with('success', 'Quiz selesai. Nilai anda: ' . $score);
+        return redirect()
+            ->route('student.attempt.result', $attempt->id)
+            ->with('success', 'Jawaban berhasil dikirim. Menunggu penilaian guru.');
     }
 
-    public function showResult($attemptId)
+
+    /* =====================================================
+     * MCQ CHECKER
+     * ===================================================== */
+    private function checkMcq($soal, $given)
     {
-        $attempt = Attempt::with('answers.soal')->findOrFail($attemptId);
-        $pelajar = Auth::user();
-        if ($attempt->pelajar_id !== $pelajar->id) abort(403);
-        return view('student.result', compact('attempt'));
+        if ($given === null) return false;
+        return strtolower(trim($given)) === strtolower(trim($soal->jawaban_benar));
     }
 
-    // Show leaderboard
+/* =====================================================
+ * RESULT
+ * ===================================================== */
+public function showResult($attemptId)
+{
+    $attempt = Attempt::with(['answers.soal'])->findOrFail($attemptId);
+
+    // Hanya pemilik attempt yang boleh melihat
+    abort_if($attempt->pelajar_id !== Auth::id(), 403);
+
+    return view('student.result', compact('attempt'));
+}
+
+
+    /* =====================================================
+     * HISTORY
+     * ===================================================== */
+    public function history()
+    {
+        $attempts = Attempt::where('pelajar_id', Auth::id())
+            ->latest()
+            ->paginate(12);
+
+        return view('student.history', compact('attempts'));
+    }
+
+    /* =====================================================
+     * LEADERBOARD (HANYA NILAI FINAL)
+     * ===================================================== */
     public function leaderboard()
     {
-        $top = Attempt::select('pelajar_id')
+        $top = Attempt::whereNotNull('score')
+            ->select('pelajar_id')
             ->selectRaw('MAX(score) as max_score')
             ->groupBy('pelajar_id')
             ->orderByDesc('max_score')
@@ -281,28 +284,4 @@ public function index(Request $request)
 
         return view('student.leaderboard', compact('top'));
     }
-
-    // Show attempt history for student
-    public function history()
-    {
-        $pelajar = Auth::user();
-        $attempts = Attempt::where('pelajar_id', $pelajar->id)->orderByDesc('created_at')->paginate(12);
-        return view('student.history', compact('attempts'));
-    }
-
-    // View list of soal (if allowed)
-    public function viewSoal()
-    {
-        $pelajar = Auth::user();
-        $readCount = MateriPelajar::where('pelajar_id', $pelajar->id)->where('status', 'read')->count();
-        $total = Materi::count();
-        if ($total === 0 || $readCount < $total) {
-            return redirect()->route('student.index')->with('error', 'Anda belum memenuhi syarat untuk mengakses soal.');
-        }
-
-        $soal = Soal::with('materi')->get();
-        return view('student.soal', compact('soal'));
-    }
 }
-
-
